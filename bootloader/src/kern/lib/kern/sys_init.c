@@ -89,19 +89,19 @@ void SYS_ROUTINE(void)
 
 void __sys_disable(void){
 	// kprintf("Disabling interrupts...")
-	UART_DeInit(&huart2);
-	UART_DeInit(&huart6);
+	// UART_DeInit(&huart2);
+	// UART_DeInit(&huart6);
 
-	disable_timer2();
+	// disable_timer2();
 
 
-	NVIC_DisableIRQ(USART2_IRQn);
-	NVIC_DisableIRQ(USART6_IRQn);
-	NVIC_DisableIRQ(TIM2_IRQn);
-	NVIC_DisableIRQ(SysTick_IRQn);
-	NVIC_DisableIRQ(FPU_IRQn);
+	// NVIC_DisableIRQ(USART2_IRQn);
+	// NVIC_DisableIRQ(USART6_IRQn);
+	// NVIC_DisableIRQ(TIM2_IRQn);
+	// NVIC_DisableIRQ(SysTick_IRQn);
+	// NVIC_DisableIRQ(FPU_IRQn);
 
-	ms_delay(5000);
+	// ms_delay(5000);
 }
 
 /*

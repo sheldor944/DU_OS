@@ -241,6 +241,9 @@ void UART_MspInit(UART_HandleTypeDef *huart)
 		GPIO_Init(GPIOA,&GPIO_InitStruct);
 		NVIC_SetPriority(USART2_IRQn, 0);
     	NVIC_EnableIRQ(USART2_IRQn);
+		
+		// Added to test, needs to be deleted;
+		// RCC->APB1ENR |= RCC_APB2ENR_FL;
 	}
 	if(huart->Instance == USART3)
 	{

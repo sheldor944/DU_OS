@@ -85,7 +85,8 @@ sys_rtc.o \
 duos \
 final.elf \
 final.bin \
-bootloader.o
+bootloader.o \
+bl-flash.o
 
 
 
@@ -179,6 +180,9 @@ sys_rtc.o: $(OS_SYS_LIB)/sys_rtc.c
 	$(CC) $(CFLAGS) $(INCLUDE) $^ -o $(OBJECT)/$@
 
 test_can.o: $(USERLAND)/utils/test_can.c
+	$(CC) $(CFLAGS) $(INCLUDE) $^ -o $(OBJECT)/$@
+
+bl-flash.o: $(OS_PATH)/lib/kern/bl-flash.c
 	$(CC) $(CFLAGS) $(INCLUDE) $^ -o $(OBJECT)/$@
 
 bootloader.o: $(OS_PATH)/arch/$(MCU)/boot/bootloader.S

@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "cm4.h": "c",
-        "timer.h": "c"
+        "timer.h": "c",
+        "sys_bus_matrix.h": "c"
     }
 }

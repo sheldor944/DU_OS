@@ -135,6 +135,26 @@ void flash_program_byte(uint32_t address, uint8_t data)
   kprintf("hopefully a byte is flashed.\n");
 }
 
+void flash_program_4_bytes(uint32_t address, uint32_t data)
+{
+  kprintf("flashing a byte to address %d.\n", address);
+
+	flash_wait_for_last_operation();
+	flash_set_program_size(0);
+
+	*FLASH_CR |= FLASH_CR_PG;
+
+	// MMIO8(address) = data;
+  (* (volatile uint32_t*) address) = data;
+  // *address = data
+
+	flash_wait_for_last_operation();
+
+	*FLASH_CR &= ~FLASH_CR_PG;		/* Disable the PG bit. */
+
+  kprintf("hopefully a byte is flashed.\n");
+}
+
 void flash_program(uint32_t address, const uint8_t *data, uint32_t len)
 {
 	/* TODO: Use dword and word size program operations where possible for
@@ -309,31 +329,94 @@ static void receive_packet(void) {
   debug(temp);
 }
 
-static void test_read(void) {
+static int8_t test_read(void) {
   int8_t read_value;
   while(1) {
     read_value = Uart_read(__CONSOLE);
-    debug(read_value);
+    // debug(read_value);
     if(read_value != -1) {
       break;
     }
     ms_delay(100);
   }
-  debug("read_value");
+  return read_value;
 }
 
 static void test_ring_buffer(void) {
-  debug("Hello. This is a test 1.");
-  // ms_delay(1000);
-  debug("Hello. This is a test 2.");
-  // ms_delay(1000);
-  
+  char ch[] = {65, '\0'};
+  // debug(ch);
+  uint8_t data[5];
+  for(int8_t i = 0; i < 4; i++) {
+    data[i] = test_read();
+  }
+  data[4] = '\0';
+  debug(data);
+
+  flash_lock();                                                            
+  flash_unlock();
+  flash_erase_sector(SECTOR_NUMBER, 0x02);
+
+  // uint8_t data = 101;
+  // flash_program_byte(TARGET_ADDRESS, data);
+
+  uint8_t arr[] = {10, 12};
+  flash_program_byte(TARGET_ADDRESS, data[0] + 1);
+  flash_program_byte(TARGET_ADDRESS + 4, data[1] + 2);
+  flash_program_byte(TARGET_ADDRESS + 8, data[2]);
+  flash_program_byte(TARGET_ADDRESS + 12, data[3]);
+
+  // flash_program(TARGET_ADDRESS, arr, 2);
+
+  flash_lock();
+
+  // uint8_t read_value = *(volatile uint32_t*) TARGET_ADDRESS;
+  // kprintf("Value: %d\n", read_value);
+
+  uint8_t values[5] = {
+    *(volatile uint32_t*) TARGET_ADDRESS,
+    *(volatile uint32_t*) (TARGET_ADDRESS + 4),
+    *(volatile uint32_t*) (TARGET_ADDRESS + 8),
+    *(volatile uint32_t*) (TARGET_ADDRESS + 12),
+    '\0'
+  };
+  debug(values);
+}
+
+static void test_flash_write_4_bytes(void) {
+  flash_lock();                                                            
+  flash_unlock();
+  flash_erase_sector(SECTOR_NUMBER, 0x02);
+
+  // uint8_t arr[] = {(1 << 0 | 1 << 8 | 1 << 16 | 1 << 24)};
+  // flash_program_byte(TARGET_ADDRESS, data[0] + 1);
+  // flash_program_byte(TARGET_ADDRESS + 4, data[1] + 2);
+  // flash_program_byte(TARGET_ADDRESS + 8, data[2]);
+  // flash_program_byte(TARGET_ADDRESS + 12, data[3]);
+  uint32_t num = (65 << 0 | 70 << 8 | 74 << 16 | 78 << 24);
+  flash_program_4_bytes(TARGET_ADDRESS, num);
+
+  // flash_program(TARGET_ADDRESS, arr, 2);
+
+  flash_lock();
+
+  // uint8_t read_value = *(volatile uint32_t*) TARGET_ADDRESS;
+  // kprintf("Value: %d\n", read_value);
+
+  uint8_t values[5] = {
+    *(volatile uint32_t*) TARGET_ADDRESS,
+    *(volatile uint32_t*) (TARGET_ADDRESS + 1),
+    *(volatile uint32_t*) (TARGET_ADDRESS + 2),
+    *(volatile uint32_t*) (TARGET_ADDRESS + 3),
+    '\0'
+  };
+  debug(values);
 }
 
 void kmain(void)
 {
   __sys_init();
   // test_flash();
+  test_flash_write_4_bytes();
 
   test_ring_buffer();
 

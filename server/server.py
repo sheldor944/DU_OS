@@ -156,17 +156,19 @@ def operate(ser: serial.Serial, packet: Packet):
     # implement remaining
 
 def test_write(ser: serial.Serial):
-    data = b'\x41'
-    ser.write(data)
-    ser.flush()      # Wait until all data is sent
-    time.sleep(1)
+    data = b'\x42'
+    for i in range(4):
+        ser.write(data)
+        ser.flush()
+    # ser.flush()      # Wait until all data is sent
+    # time.sleep(1)
 
 
 try:
     with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=10) as ser:
         # time.sleep(5)
         print(f"Listening for data on {SERIAL_PORT} at {BAUD_RATE} baud.")
-        # test_write(ser)
+        test_write(ser)
         while True:
             print("initiating packet receive\n")
             byte_array = receive_packet_bytes(ser)

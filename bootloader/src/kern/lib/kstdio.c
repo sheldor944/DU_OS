@@ -19,6 +19,8 @@
 // Simplified version of printf
 void kprintf(char *format,...)
 {
+	// remove later
+	return;
 //write your code here
 	char *tr;
 	uint32_t i;

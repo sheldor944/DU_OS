@@ -13,6 +13,11 @@
 // #include <bl-flash.h>
 // #include "../include/kern/bl-flash.h"
 
+// headers for implementing packet protocol
+#include <UsartRingBuffer.h>
+#include <system_config.h>
+// #include <kstring.h>
+
 #ifndef DEBUG
 #define DEBUG 1
 #endif
@@ -36,6 +41,20 @@
 #define FLASH_CR_SNB_MASK		0x1f
 #define FLASH_CR_PROGRAM_SHIFT		8
 #define FLASH_CR_SNB_SHIFT		3
+
+// needed for packet protocl
+#define PACKET_DATA_MAX_LENGTH 128UL
+#define CMD_FIELD_LENGTH 1
+#define LENGTH_FIELD_LENGTH 1
+#define CRC_FIELD_LENGTH 4
+#define PACKET_MAX_LENGTH (CMD_FIELD_LENGTH + LENGTH_FIELD_LENGTH + PACKET_DATA_MAX_LENGTH + CRC_FIELD_LENGTH)
+
+struct Packet {
+  uint8_t command;
+  uint8_t length;
+  uint8_t* data;
+  uint8_t* crc;
+};
 
 void flash_lock(void);
 
@@ -162,10 +181,9 @@ static void jump_to_os(void){
   jump_to_os_reset();
 }
 
-void kmain(void)
-{
-  __sys_init();
-  // ms_delay(100);    
+static void test_flash(void) {
+  kprintf("Initiating flash test...\n");
+
   flash_lock();                                                            
   flash_unlock();
   flash_erase_sector(SECTOR_NUMBER, 0x02);
@@ -185,32 +203,141 @@ void kmain(void)
 
   read_value = *(volatile uint32_t*) (TARGET_ADDRESS + 4);
   kprintf("Second Value: %d\n", read_value);
-
-
-  // ms_delay(100);
-  kprintf("Before calling the flash erase function \n");
-  // flash_erase_sector(4,0x02);
-  // flash_erase_sector(5,0x02);
-  // flash_erase_sector(6,0x02);
-  // flash_erase_sector(TARGET_ADDRESS, 0x02);
-
-  // uint8_t data[1];
-  // for(uint32_t i = 0; i < 1; i++) {
-  //   data[i] = (uint8_t)(i + 1);  // Fill with values from 1 to 255
-  // }
-  // flash_program(TARGET_ADDRESS, data, 1);
-  flash_lock();
-  // for (uint32_t i = 0; i < 1; i++) {
-  //   uint8_t read_value = *(volatile uint32_t*) (TARGET_ADDRESS + i);
-  //   kprintf("value is %d\n",read_value);
-  //   if (read_value != data[i]) {
-  //     kprintf("Data verification failed at address %08X\n", TARGET_ADDRESS + i);
-  //     return;
-  //   }
-  // }
-
   kprintf("Data written and verified successfully!\n");
-  kprintf("Hello from Bootloader\n");
+}
+
+static void send_packet(struct Packet* packet) {
+  Uart_write(packet->command, __CONSOLE);
+  Uart_write(packet->length, __CONSOLE);
+  for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
+    Uart_write(packet->data[i], __CONSOLE);
+  }
+  // Uart_write(packet->crc, __CONSOLE);
+  for(int i = 0; i < 4; i++) {
+    Uart_write(packet->crc[i], __CONSOLE);
+  }
+}
+
+static void debug(const uint8_t* statement) {
+  uint8_t length = __strlen(statement);
+  uint8_t command = 0;
+
+  uint8_t crc[4];
+  for(uint8_t i = 0; i < 4; i++) crc[i] = 0;
+
+  uint8_t data[PACKET_DATA_MAX_LENGTH];
+  for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
+    if(i < length) {
+      data[i] = statement[i];
+      continue;
+    }
+    data[i] = 0;
+  }
+
+  struct Packet packet = {
+    .command = command,
+    .length = length,
+    .data = data,
+    .crc = crc
+  };
+
+  send_packet(&packet);
+}
+
+static uint32_t bits32_from_4_bytes(uint8_t * crc_array){
+  uint32_t sum = 0; 
+  uint32_t power = 1 << 8; 
+  for(uint8_t i = 0; i < 4; i++){
+    sum *= power; 
+    sum += crc_array[i];
+  }
+  return sum; 
+}
+
+static void init(){
+  uint8_t data[PACKET_DATA_MAX_LENGTH] ;
+  for(uint8_t i = 0 ; i < PACKET_DATA_MAX_LENGTH ; i++){
+    data[i] = 0;
+  }
+  uint32_t crc = 0; 
+  struct Packet packet = {
+    .command = 1,
+    .length = 1,
+    .data = data,
+    .crc = crc 
+  }; 
+
+  send_packet(&packet);
+}
+
+static void packet_from_bytes(uint8_t* data_bytes, struct Packet* packet) {
+  uint8_t data[PACKET_DATA_MAX_LENGTH];
+  uint8_t crc_array[4] = {data_bytes[PACKET_MAX_LENGTH - 4],
+                          data_bytes[PACKET_MAX_LENGTH - 3],
+                          data_bytes[PACKET_MAX_LENGTH - 2],
+                          data_bytes[PACKET_MAX_LENGTH - 1]
+                          };
+
+  uint32_t crc = bits32_from_4_bytes(crc_array);
+
+  for(uint8_t i = 0 ; i < PACKET_DATA_MAX_LENGTH ; i ++){
+    data[i] = data_bytes[i + 2];
+  }
+
+  packet->command = data_bytes[0];
+  packet->length = data_bytes[1];
+  packet->data = data; 
+  packet->crc = crc;
+}
+
+static void receive_packet(void) {
+  uint8_t data[PACKET_MAX_LENGTH];
+  for(uint8_t i = 0; i < PACKET_MAX_LENGTH; i++) {
+    while(data[i] = Uart_read(__CONSOLE)){
+
+    }
+    // data[i] = Uart_read(__CONSOLE);
+  }
+  struct Packet packet ;
+  packet_from_bytes(data, &packet); 
+  uint8_t temp[4] = {
+    packet.data[0],
+    packet.data[1],
+    packet.data[2],
+    packet.data[3]
+  };
+  debug(temp);
+}
+
+static void test_read(void) {
+  int8_t read_value;
+  while(1) {
+    read_value = Uart_read(__CONSOLE);
+    debug(read_value);
+    if(read_value != -1) {
+      break;
+    }
+    ms_delay(100);
+  }
+  debug("read_value");
+}
+
+static void test_ring_buffer(void) {
+  debug("Hello. This is a test 1.");
+  // ms_delay(1000);
+  debug("Hello. This is a test 2.");
+  // ms_delay(1000);
+  
+}
+
+void kmain(void)
+{
+  __sys_init();
+  // test_flash();
+
+  test_ring_buffer();
+
+  // kprintf("Hello from Bootloader\n");
   ms_delay(5000);
   *VERSION_ADDR = 1;
   // __sys_disable();

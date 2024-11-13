@@ -31,7 +31,7 @@ LOAD object/timer.o
 LOAD object/sys_err.o
 LOAD object/sys_rtc.o
 
-.text           0x08010000     0x4880
+.text           0x08010000     0x4888
                 0x08010000                        _stext = .
  *(.isr_vector)
  .isr_vector    0x08010000      0x1c4 object/stm32_startup.o
@@ -266,38 +266,37 @@ LOAD object/sys_rtc.o
  .rodata        0x080146b4       0x64 object/mcu_info.o
  .rodata        0x08014718        0x6 object/kstring.o
  *fill*         0x0801471e        0x2 
- .rodata        0x08014720        0xf object/kmain.o
- *fill*         0x0801472f        0x1 
- .rodata        0x08014730        0x4 object/stm32_startup.o
-                0x08014730                STACK_START
- .rodata        0x08014734       0x18 object/sys_clock.o
-                0x08014734                AHBPrescTable
-                0x08014744                APBPrescTable
- .rodata        0x0801474c      0x132 object/sys_init.o
-                0x08014880                        . = ALIGN (0x4)
- *fill*         0x0801487e        0x2 
-                0x08014880                        _etext = .
-                0x08014880                        _la_data = LOADADDR (.data)
+ .rodata        0x08014720       0x18 object/kmain.o
+ .rodata        0x08014738        0x4 object/stm32_startup.o
+                0x08014738                STACK_START
+ .rodata        0x0801473c       0x18 object/sys_clock.o
+                0x0801473c                AHBPrescTable
+                0x0801474c                APBPrescTable
+ .rodata        0x08014754      0x132 object/sys_init.o
+                0x08014888                        . = ALIGN (0x4)
+ *fill*         0x08014886        0x2 
+                0x08014888                        _etext = .
+                0x08014888                        _la_data = LOADADDR (.data)
 
-.glue_7         0x08014880        0x0
- .glue_7        0x08014880        0x0 linker stubs
+.glue_7         0x08014888        0x0
+ .glue_7        0x08014888        0x0 linker stubs
 
-.glue_7t        0x08014880        0x0
- .glue_7t       0x08014880        0x0 linker stubs
+.glue_7t        0x08014888        0x0
+ .glue_7t       0x08014888        0x0 linker stubs
 
-.vfp11_veneer   0x08014880        0x0
- .vfp11_veneer  0x08014880        0x0 linker stubs
+.vfp11_veneer   0x08014888        0x0
+ .vfp11_veneer  0x08014888        0x0 linker stubs
 
-.v4_bx          0x08014880        0x0
- .v4_bx         0x08014880        0x0 linker stubs
+.v4_bx          0x08014888        0x0
+ .v4_bx         0x08014888        0x0 linker stubs
 
-.iplt           0x08014880        0x0
- .iplt          0x08014880        0x0 object/kfloat.o
+.iplt           0x08014888        0x0
+ .iplt          0x08014888        0x0 object/kfloat.o
 
-.rel.dyn        0x08014880        0x0
- .rel.iplt      0x08014880        0x0 object/kfloat.o
+.rel.dyn        0x08014888        0x0
+ .rel.iplt      0x08014888        0x0 object/kfloat.o
 
-.data           0x20000000       0x6c load address 0x08014880
+.data           0x20000000       0x6c load address 0x08014888
                 0x20000000                        _sdata = .
  *(.data)
  .data          0x20000000        0x0 object/kmath.o
@@ -325,10 +324,10 @@ LOAD object/sys_rtc.o
                 0x2000006c                        . = ALIGN (0x4)
                 0x2000006c                        _edata = .
 
-.igot.plt       0x2000006c        0x0 load address 0x080148ec
+.igot.plt       0x2000006c        0x0 load address 0x080148f4
  .igot.plt      0x2000006c        0x0 object/kfloat.o
 
-.bss            0x2000006c      0x905 load address 0x080148ec
+.bss            0x2000006c      0x905 load address 0x080148f4
                 0x2000006c                        _sbss = .
  *(.bss)
  .bss           0x2000006c        0x0 object/kmath.o

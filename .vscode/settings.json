@@ -3,6 +3,7 @@
         "cm4.h": "c",
         "timer.h": "c",
         "sys_bus_matrix.h": "c",
-        "kstring.h": "c"
+        "kstring.h": "c",
+        "usartringbuffer.h": "c"
     }
 }

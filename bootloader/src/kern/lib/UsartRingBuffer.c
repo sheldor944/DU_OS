@@ -170,6 +170,7 @@ int Uart_peek(UART_HandleTypeDef *uart)
 		return -1;
 }
 
+// implementation that sir provided
 int Uart_read(UART_HandleTypeDef *uart)
 {
 	if (IS_USART_INSTANCE(uart->Instance))
@@ -184,6 +185,26 @@ int Uart_read(UART_HandleTypeDef *uart)
 			unsigned char c = uart->pRxBuffPtr->buffer[uart->pRxBuffPtr->tail];
 			uart->pRxBuffPtr->tail = (unsigned int)(uart->pRxBuffPtr->tail + 1) % uart->RxXferSize;
 			return c;
+		}
+	}
+
+	else
+		return -1;
+}
+
+// written by me
+uint8_t UART_READ(UART_HandleTypeDef *uart) {
+	if (IS_USART_INSTANCE(uart->Instance)) {
+		while(1) {
+			// if the head isn't ahead of the tail, we don't have any characters
+			if (uart->pRxBuffPtr->head == uart->pRxBuffPtr->tail) {
+				continue;
+			}
+			else {
+				uint8_t c = uart->pRxBuffPtr->buffer[uart->pRxBuffPtr->tail];
+				uart->pRxBuffPtr->tail = (uint8_t)(uart->pRxBuffPtr->tail + 1) % uart->RxXferSize;
+				return c;
+			}
 		}
 	}
 

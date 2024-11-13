@@ -48,6 +48,11 @@
 #define LENGTH_FIELD_LENGTH 1
 #define CRC_FIELD_LENGTH 4
 #define PACKET_MAX_LENGTH (CMD_FIELD_LENGTH + LENGTH_FIELD_LENGTH + PACKET_DATA_MAX_LENGTH + CRC_FIELD_LENGTH)
+#define BYTE_SIZE
+
+static volatile uint32_t total_number_of_packets;
+
+static void debug(const uint8_t*);
 
 struct Packet {
   uint8_t command;
@@ -198,7 +203,16 @@ static void jump_to_os(void){
   void_fn jump_to_os_reset = (void_fn) reset_vector;
   SCB->VTOR = BOATLOADER_SIZE;
 
-  jump_to_os_reset();
+  uint8_t statement[] = {
+    *(volatile uint8_t *) OS_START_ADDRESS,
+    *(volatile uint8_t *) OS_START_ADDRESS + 1,
+    *(volatile uint8_t *) OS_START_ADDRESS + 2,
+    *(volatile uint8_t *) OS_START_ADDRESS + 3,
+    '\0'
+  };
+  debug("hi");
+
+  // jump_to_os_reset();
 }
 
 static void test_flash(void) {
@@ -264,25 +278,29 @@ static void debug(const uint8_t* statement) {
   send_packet(&packet);
 }
 
-static uint32_t bits32_from_4_bytes(uint8_t * crc_array){
+static uint32_t bits32_from_4_bytes(uint8_t *bytes){
   uint32_t sum = 0; 
   uint32_t power = 1 << 8; 
   for(uint8_t i = 0; i < 4; i++){
     sum *= power; 
-    sum += crc_array[i];
+    sum += bytes[i];
   }
   return sum; 
 }
 
-static void init(){
+static void init(void){
   uint8_t data[PACKET_DATA_MAX_LENGTH] ;
   for(uint8_t i = 0 ; i < PACKET_DATA_MAX_LENGTH ; i++){
     data[i] = 0;
   }
-  uint32_t crc = 0; 
+  uint8_t crc[4];
+  for(uint8_t i = 0; i < 4; i++) {
+    crc[i] = 0;
+  } 
+
   struct Packet packet = {
     .command = 1,
-    .length = 1,
+    .length = 0,
     .data = data,
     .crc = crc 
   }; 
@@ -290,43 +308,36 @@ static void init(){
   send_packet(&packet);
 }
 
+// WARNING:
+// packet->data needs to be allocated a size of PACKET_DATA_MAX_LENGTH
+// before it is called.
 static void packet_from_bytes(uint8_t* data_bytes, struct Packet* packet) {
-  uint8_t data[PACKET_DATA_MAX_LENGTH];
-  uint8_t crc_array[4] = {data_bytes[PACKET_MAX_LENGTH - 4],
-                          data_bytes[PACKET_MAX_LENGTH - 3],
-                          data_bytes[PACKET_MAX_LENGTH - 2],
-                          data_bytes[PACKET_MAX_LENGTH - 1]
-                          };
-
-  uint32_t crc = bits32_from_4_bytes(crc_array);
-
-  for(uint8_t i = 0 ; i < PACKET_DATA_MAX_LENGTH ; i ++){
-    data[i] = data_bytes[i + 2];
-  }
-
   packet->command = data_bytes[0];
   packet->length = data_bytes[1];
-  packet->data = data; 
-  packet->crc = crc;
+  // debug(convertu32(packet->length, 10));
+
+  
+  for(uint8_t i = 0 ; i < PACKET_DATA_MAX_LENGTH ; i ++) {
+    // i + 2 because cmd takes 1 byte, and length takes 1 byte
+    packet->data[i] = data_bytes[i + 2];
+  }
+
+  for(uint8_t i = 0; i < 4; i++) {
+    packet->crc[i] = data_bytes[PACKET_MAX_LENGTH - (4 - i)];
+  }
+
+  // no idea why
+  uint32_t crc = bits32_from_4_bytes(packet->crc);
 }
 
-static void receive_packet(void) {
+// WARNING: packet object needs to have statically allocated crc and data fields
+static void receive_packet(struct Packet* packet) {
   uint8_t data[PACKET_MAX_LENGTH];
   for(uint8_t i = 0; i < PACKET_MAX_LENGTH; i++) {
-    while(data[i] = Uart_read(__CONSOLE)){
-
-    }
-    // data[i] = Uart_read(__CONSOLE);
+    data[i] = UART_READ(__CONSOLE);
   }
-  struct Packet packet ;
-  packet_from_bytes(data, &packet); 
-  uint8_t temp[4] = {
-    packet.data[0],
-    packet.data[1],
-    packet.data[2],
-    packet.data[3]
-  };
-  debug(temp);
+  Uart_flush(__CONSOLE);
+  packet_from_bytes(data, packet);
 }
 
 static int8_t test_read(void) {
@@ -402,26 +413,114 @@ static void test_flash_write_4_bytes(void) {
   // uint8_t read_value = *(volatile uint32_t*) TARGET_ADDRESS;
   // kprintf("Value: %d\n", read_value);
 
-  uint8_t values[5] = {
-    *(volatile uint32_t*) TARGET_ADDRESS,
-    *(volatile uint32_t*) (TARGET_ADDRESS + 1),
-    *(volatile uint32_t*) (TARGET_ADDRESS + 2),
-    *(volatile uint32_t*) (TARGET_ADDRESS + 3),
-    '\0'
-  };
+  // uint8_t values[5] = {
+  //   *(volatile uint32_t*) TARGET_ADDRESS,
+  //   *(volatile uint32_t*) (TARGET_ADDRESS + 1),
+  //   *(volatile uint32_t*) (TARGET_ADDRESS + 2),
+  //   *(volatile uint32_t*) (TARGET_ADDRESS + 3),
+  //   '\0'
+  // };
+
+  uint8_t values[5];
+  uint32_t value = *(volatile uint32_t*) TARGET_ADDRESS;
+  uint32_t mask = (1 << 8) - 1;
+
+  values[0] = value & mask;
+  value >>= 8;
+  values[1] = value & mask;
+  value >>= 8;
+  values[2] = value & mask;
+  value >>= 8;
+  values[3] = value & mask;
+  value >>= 8;
+  values[4] = '\0';
+  
   debug(values);
+}
+
+static void test_init() {
+  init();
+
+  volatile uint8_t data[PACKET_DATA_MAX_LENGTH];
+  volatile uint8_t crc[4];
+  struct Packet packet = {
+    .data = data,
+    .crc = crc
+  };
+  receive_packet(&packet);
+
+  volatile uint8_t size_info_array[4] = {
+    packet.data[0],
+    packet.data[1],
+    packet.data[2],
+    packet.data[3]
+  };
+  total_number_of_packets = bits32_from_4_bytes(size_info_array);
+  debug(convertu32(total_number_of_packets, 10));
+
+  volatile uint8_t cmd_data[PACKET_DATA_MAX_LENGTH];
+  volatile uint8_t cmd_crc[4];
+  for(uint32_t i = 0; i < total_number_of_packets; i++) {
+    for(uint32_t j = 0; j < PACKET_DATA_MAX_LENGTH; j++) {
+      cmd_data[j] = 0;
+    }
+    uint32_t ack = i;
+    uint32_t mask = (1 << 8) - 1;
+    for(int32_t j = 3; j >= 0; j--) {
+      cmd_data[j] = ack & mask;
+      ack >>= 8;
+      cmd_crc[j] = 0;
+    }
+    // *(uint32_t *) cmd_crc = (uint32_t) 0;
+    struct Packet command_packet = {
+      .command = 2,
+      .length = 4,
+      .data = cmd_data,
+      .crc = cmd_crc
+    };
+    send_packet(&command_packet);
+
+    receive_packet(&packet);
+    debug(convertu32(packet.length, 10));
+  }
+}
+
+static void coms_testing(void) {
+  init();
+  volatile uint8_t data[PACKET_DATA_MAX_LENGTH];
+  volatile uint8_t crc[4];
+  struct Packet packet = {
+    .data = data,
+    .crc = crc
+  };
+  receive_packet(&packet);
+  debug(convertu32(packet.data[0], 10));
+  // debug(convertu32(packet.data[0] + 40, 10));
+
+  // init();
+  // receive_packet(&packet);
+  // debug(convertu32(packet.data[0], 10));
+
+  
+  // debug(convertu32(packet.data[0] + 40, 10));
+
+  // init();
+  // receive_packet(&packet);
+  // debug(convertu32(packet.data[0], 10));
 }
 
 void kmain(void)
 {
   __sys_init();
   // test_flash();
-  test_flash_write_4_bytes();
-
-  test_ring_buffer();
+  // test_flash_write_4_bytes();
+  test_init();
+  // coms_testing();
+  // coms_testing();
+  // test_ring_buffer();
 
   // kprintf("Hello from Bootloader\n");
-  ms_delay(5000);
+  // ms_delay(5000);
   *VERSION_ADDR = 1;
   // __sys_disable();
   

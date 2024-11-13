@@ -49,6 +49,8 @@ extern "C" {
 /* reads the data in the rx_buffer and increment the tail count in rx_buffer of the given UART */
 int Uart_read(UART_HandleTypeDef *uart);
 
+uint8_t UART_READ(UART_HandleTypeDef *uart);
+
 /* writes the data to the tx_buffer and increment the head count in tx_buffer */
 void Uart_write(int c, UART_HandleTypeDef *uart);
 

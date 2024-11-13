@@ -39,7 +39,7 @@ extern "C" {
 int __str_to_num(uint8_t*,uint8_t);
 void __reverse_str(uint8_t*);
 uint32_t __strlen(uint8_t*);
-uint8_t * convert(int,uint8_t);
+uint8_t * convert(int, uint8_t);
 uint8_t * convertu32(uint32_t,uint8_t);
 uint8_t *float2str(float);
 float str2float(uint8_t*);

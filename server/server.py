@@ -50,6 +50,20 @@ class Packet:
         return packet_bytes
 
 current_state = State.INITIALIZATION
+file_chunks = []
+
+def read_file_in_chunks(filename, chunk_size=PACKET_DATA_MAX_LENGTH):
+    global file_chunks
+    file_chunks = []  # Reset the global variable in case it's already populated
+    with open(filename, 'rb') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            if len(chunk) == 0:  # End of file
+                break
+            elif len(chunk) < chunk_size:  # Last chunk with padding of 1s in all bits
+                chunk += b'\xFF' * (chunk_size - len(chunk))
+            file_chunks.append(chunk)
+    print("Number of chunks: ", len(file_chunks))
 
 '''
     Packet Protocol Command Types Meaning:
@@ -100,7 +114,7 @@ def file_size(file_path):
 #     pass
 
 def handle_debug(packet: Packet):
-    print("DEBUGGING START:")
+    print("\n\n----\nDEBUGGING START:\n")
     length = packet.length
 
     byte_array = bytearray()
@@ -110,9 +124,9 @@ def handle_debug(packet: Packet):
             continue
         byte_array.extend(byte)
     data = bytes(byte_array)
-    print(data.decode(ENCODER))
+    print("[",  data.decode(ENCODER), "]")
 
-    print("DEBUGGING END")
+    print("\nDEBUGGING END\n----\n\n")
 
 
 def handle_initialization(ser: serial.Serial, packet: Packet):
@@ -121,6 +135,7 @@ def handle_initialization(ser: serial.Serial, packet: Packet):
     print(f"File size: {size}")
 
     total_number_of_packets = math.ceil(size / PACKET_DATA_MAX_LENGTH)
+    print("Total number of packets: ", total_number_of_packets)
     
     bytes_32_bit = total_number_of_packets.to_bytes(4, byteorder='big')
     bytes_96_bit = bytes(12)
@@ -132,8 +147,20 @@ def handle_initialization(ser: serial.Serial, packet: Packet):
     packet_bytes = packet.to_bytes()
     ser.write(packet_bytes)
 
-# def handle_send(ser: serial.Serial):
-#     pass
+def handle_send(ser: serial.Serial, packet: Packet):
+    chunk_index = int.from_bytes(b''.join(packet.data)[:4], byteorder="big")
+    print("chunk index: ", chunk_index)
+    packet = Packet(
+        command=2,
+        length=PACKET_DATA_MAX_LENGTH,
+        data=file_chunks[chunk_index],
+        crc=0
+    )
+    packet_bytes = packet.to_bytes()
+    
+    print("The packet being sent is: ", packet)
+    print("Bytes are: ", packet_bytes)
+    ser.write(packet_bytes)
 
 def receive_packet_bytes(ser: serial.Serial):
     byte_array = bytearray()
@@ -149,10 +176,13 @@ def receive_packet_bytes(ser: serial.Serial):
 
 def operate(ser: serial.Serial, packet: Packet):
     cmd = packet.command
+    print("Command: ", cmd)
     if cmd == 0:
         handle_debug(packet)
     if cmd == 1:
         handle_initialization(ser, packet)
+    if cmd == 2:
+        handle_send(ser, packet)
     # implement remaining
 
 def test_write(ser: serial.Serial):
@@ -163,16 +193,18 @@ def test_write(ser: serial.Serial):
     # ser.flush()      # Wait until all data is sent
     # time.sleep(1)
 
+read_file_in_chunks(OS_FILENAME)
 
 try:
-    with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=10) as ser:
+    with serial.Serial(SERIAL_PORT, BAUD_RATE) as ser:
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+
         # time.sleep(5)
         print(f"Listening for data on {SERIAL_PORT} at {BAUD_RATE} baud.")
-        test_write(ser)
+        # test_write(ser)
         while True:
-            print("initiating packet receive\n")
             byte_array = receive_packet_bytes(ser)
-            print("got a new command")
             packet = bytearray_to_packet(byte_array=byte_array)
             operate(ser, packet)
 

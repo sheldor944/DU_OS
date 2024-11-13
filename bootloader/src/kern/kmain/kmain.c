@@ -22,8 +22,8 @@
 #define DEBUG 1
 #endif
 
-#define SECTOR_NUMBER      7
-#define TARGET_ADDRESS  0x08060000
+#define SECTOR_NUMBER      4
+#define TARGET_ADDRESS  0x08010000
 #define BOATLOADER_SIZE (0x10000U)
 #define OS_START_ADDRESS (0X08010000U) //duos 
 #define BOATLOADER_SIZE (0x10000U)
@@ -51,8 +51,6 @@
 #define BYTE_SIZE
 
 static volatile uint32_t total_number_of_packets;
-
-static void debug(const uint8_t*);
 
 struct Packet {
   uint8_t command;
@@ -193,27 +191,6 @@ void flash_erase_sector(uint8_t sector, uint32_t program_size)
 }
 
 
-
-
-static void jump_to_os(void){
-  uint32_t *reset_vector_entry = (uint32_t *)(OS_START_ADDRESS + 4U);
-  uint32_t *reset_vector= (uint32_t *)(*reset_vector_entry);
-
-  typedef void(*void_fn) (void);
-  void_fn jump_to_os_reset = (void_fn) reset_vector;
-  SCB->VTOR = BOATLOADER_SIZE;
-
-  uint8_t statement[] = {
-    *(volatile uint8_t *) OS_START_ADDRESS,
-    *(volatile uint8_t *) OS_START_ADDRESS + 1,
-    *(volatile uint8_t *) OS_START_ADDRESS + 2,
-    *(volatile uint8_t *) OS_START_ADDRESS + 3,
-    '\0'
-  };
-  debug("hi");
-
-  // jump_to_os_reset();
-}
 
 static void test_flash(void) {
   kprintf("Initiating flash test...\n");
@@ -438,7 +415,41 @@ static void test_flash_write_4_bytes(void) {
   debug(values);
 }
 
+static void write_init(void) {
+  flash_lock();                                                            
+  flash_unlock();
+  flash_erase_sector(SECTOR_NUMBER, 0x02);
+}
+
+static void write_end(void) {
+  flash_lock();
+}
+
+static void write(struct Packet* packet, uint32_t chunk_index) {
+  uint32_t current_target_address = TARGET_ADDRESS + chunk_index * PACKET_DATA_MAX_LENGTH;
+
+  // uint8_t data = 101;
+  // flash_program_byte(TARGET_ADDRESS, data);
+
+  // uint8_t arr[] = {10, 12};
+  // flash_program_byte(TARGET_ADDRESS, arr[0]);
+  // flash_program_byte(TARGET_ADDRESS + 4, arr[1]);
+  // flash_program(TARGET_ADDRESS, arr, 2);
+  for(int i = 0; i < PACKET_DATA_MAX_LENGTH; i += 4) {
+    uint32_t data_to_write = 0, power = (1 << 8);
+    for(int j = 3; j >= 0; j--) {
+      data_to_write = (data_to_write * power) + (uint32_t) packet->data[i + j];
+    }
+    // debug("Chunk Index");
+    // debug(convertu32(i, 10));
+    // debug("data to write:");
+    // debug(convertu32(data_to_write, 10));
+    flash_program_4_bytes(current_target_address + i, data_to_write);
+  }
+}
+
 static void test_init() {
+  write_init();
   init();
 
   volatile uint8_t data[PACKET_DATA_MAX_LENGTH];
@@ -456,7 +467,7 @@ static void test_init() {
     packet.data[3]
   };
   total_number_of_packets = bits32_from_4_bytes(size_info_array);
-  debug(convertu32(total_number_of_packets, 10));
+  // debug(convertu32(total_number_of_packets, 10));
 
   volatile uint8_t cmd_data[PACKET_DATA_MAX_LENGTH];
   volatile uint8_t cmd_crc[4];
@@ -480,9 +491,25 @@ static void test_init() {
     };
     send_packet(&command_packet);
 
+
+     
     receive_packet(&packet);
-    debug(convertu32(packet.length, 10));
+    // uint32_t first_4_byte = 0, power = (1 << 8) ; 
+    // for(int j = 3 ; j >= 0 ; j--){
+    //   uint32_t current_number = packet.data[j];
+    //   debug("current number ");
+    //   debug(convertu32(current_number, 10));
+    //   first_4_byte *= power;
+    //   first_4_byte += (uint32_t) packet.data[j];
+    // }
+    // debug("first 4 bytes ");
+    // debug(convertu32(first_4_byte, 10));
+
+    write(&packet, i);
+    // debug(convertu32(packet.length, 10));
   }
+
+  write_end();
 }
 
 static void coms_testing(void) {
@@ -509,12 +536,37 @@ static void coms_testing(void) {
   // debug(convertu32(packet.data[0], 10));
 }
 
+static void jump_to_os(void){
+  uint32_t *reset_vector_entry = (uint32_t *)(OS_START_ADDRESS + 4U);
+  uint32_t *reset_vector= (uint32_t *)(*reset_vector_entry);
+
+  typedef void(*void_fn) (void);
+  void_fn jump_to_os_reset = (void_fn) reset_vector;
+
+  // uint8_t statement[5] = {
+  //   *(volatile uint8_t *) OS_START_ADDRESS,
+  //   *(volatile uint8_t *) OS_START_ADDRESS + 1,
+  //   *(volatile uint8_t *) OS_START_ADDRESS + 2,
+  //   *(volatile uint8_t *) OS_START_ADDRESS + 3,
+  //   '\0'
+  // };
+  // debug(statement);
+  uint32_t first_value = *(volatile uint32_t *) (OS_START_ADDRESS);
+  // debug(convertu32(first_value, 10));
+  ms_delay(500);
+  SCB->VTOR = BOATLOADER_SIZE;
+  jump_to_os_reset();
+}
+
+
 void kmain(void)
 {
   __sys_init();
+  
   // test_flash();
   // test_flash_write_4_bytes();
-  test_init();
+  // test_init();
+  // init();
   // coms_testing();
   // coms_testing();
   // test_ring_buffer();
@@ -523,8 +575,13 @@ void kmain(void)
   // ms_delay(5000);
   *VERSION_ADDR = 1;
   // __sys_disable();
+  // Uart_flush(__CONSOLE);
+  // debug("hi");
+  // Uart_flush(__CONSOLE);
+  // ms_delay(100);
+  // debug("jump to os");
   
-  // jump_to_os();
+  jump_to_os();
   while(1) {
 
   }

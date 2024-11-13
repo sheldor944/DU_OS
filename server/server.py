@@ -18,7 +18,7 @@ PACKET_MAX_LENGTH = \
     PACKET_DATA_MAX_LENGTH + \
     CRC_FIELD_LENGTH
 ENCODER = 'utf-8'
-OS_FILENAME = 'duos'
+OS_FILENAME = 'output.bin'
 
 class State(Enum):
     COMMAND_RECEIVE = 0
@@ -64,6 +64,12 @@ def read_file_in_chunks(filename, chunk_size=PACKET_DATA_MAX_LENGTH):
                 chunk += b'\xFF' * (chunk_size - len(chunk))
             file_chunks.append(chunk)
     print("Number of chunks: ", len(file_chunks))
+
+def print_chunks():
+    for i, chunk in enumerate(file_chunks):
+        if i == 2:
+            break
+        print(f"Chunk {i}: ", " ".join(f"{byte:02x}" for byte in chunk))
 
 '''
     Packet Protocol Command Types Meaning:
@@ -116,6 +122,8 @@ def file_size(file_path):
 def handle_debug(packet: Packet):
     print("\n\n----\nDEBUGGING START:\n")
     length = packet.length
+
+    print("Debug packet:\n", packet.to_bytes, "\n\n")
 
     byte_array = bytearray()
     for i in range(PACKET_DATA_MAX_LENGTH):
@@ -194,6 +202,8 @@ def test_write(ser: serial.Serial):
     # time.sleep(1)
 
 read_file_in_chunks(OS_FILENAME)
+print_chunks()
+# print("First file chunk: ",  file_chunks[0])
 
 try:
     with serial.Serial(SERIAL_PORT, BAUD_RATE) as ser:

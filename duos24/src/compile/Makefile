@@ -222,5 +222,3 @@ clean:
 
 load:
 	openocd -f /usr/share/openocd/scripts/board/stm32f4discovery.cfg -f /usr/share/openocd/scripts/interface/stlink.cfg -c "program target/duos verify reset exit"
-
-

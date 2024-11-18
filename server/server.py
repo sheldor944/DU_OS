@@ -20,13 +20,12 @@ PACKET_MAX_LENGTH = \
 ENCODER = 'utf-8'
 OS_FILENAME = 'output.bin'
 
-last_sent = -1
-
 class State(Enum):
     COMMAND_RECEIVE = 0
     DEBUG = 1
     INITIALIZATION = 2
     SEND = 3
+    OS_CONSOLE = 4
 
 class Packet:
     def __init__(self, command: int, length: int, data: List[bytes], crc: int):
@@ -80,6 +79,7 @@ def print_chunks():
     cmd=0: DEBUG
     cmd=1: INITIALIZATION
     cmd=2: SEND, the client will provide some ack
+    cmd=4: work as OS console
 '''
 
 def to_list_of_integers(packet: Packet):
@@ -218,6 +218,13 @@ def receive_packet_bytes(ser: serial.Serial):
     # print("\n\n\nreceived byte_array:\n", byte_array, "\n\n\n")
     return byte_array
 
+def handle_version_check(ser: serial.Serial, packet: Packet):
+    pass
+
+def handle_os_print(ser, packet):
+    global current_state
+    current_state = State.OS_CONSOLE
+
 def operate(ser: serial.Serial, packet: Packet):
     cmd = packet.command
     print("Command: ", cmd)
@@ -227,6 +234,10 @@ def operate(ser: serial.Serial, packet: Packet):
         handle_initialization(ser, packet)
     if cmd == 2:
         handle_send(ser, packet)
+    if cmd == 3:
+        handle_version_check(ser, packet)
+    if cmd == 4:
+        handle_os_print(ser, packet)
     # implement remaining
 
 def test_write(ser: serial.Serial):
@@ -287,9 +298,10 @@ def test_crc(packet: Packet):
     return packet_list
 
 def os_print(ser: serial.Serial):
-    if ser.in_waiting() > 1:
-        data = ser.read(ser.in_waiting())
-        print(data.decode(ENCODER))
+    if ser.in_waiting > 0:
+        data = ser.read(ser.in_waiting)
+        print(data.decode(ENCODER), end='')
+    # print("os_print")
 
 # Example usage
 data = [0x1, 2, 3, 4]  # Example 32-bit data items
@@ -312,20 +324,20 @@ try:
         print(f"Listening for data on {SERIAL_PORT} at {BAUD_RATE} baud.")
         # test_write(ser)
         while True:
-            # if last_sent >= len(file_chunks) - 1:
-            #     os_print(ser)
-            # else:
-            #     byte_array = receive_packet_bytes(ser)
-            #     packet = bytearray_to_packet(byte_array=byte_array)
-            #     # print(f" received packet : {packet}")
-            #     # test_crc(packet)
-            #     operate(ser, packet)
+            if current_state == State.OS_CONSOLE:
+                os_print(ser)
+            else:
+                byte_array = receive_packet_bytes(ser)
+                packet = bytearray_to_packet(byte_array=byte_array)
+                # print(f" received packet : {packet}")
+                # test_crc(packet)
+                operate(ser, packet)
             
-            byte_array = receive_packet_bytes(ser)
-            packet = bytearray_to_packet(byte_array=byte_array)
-            # print(f" received packet : {packet}")
-            # test_crc(packet)
-            operate(ser, packet)
+            # byte_array = receive_packet_bytes(ser)
+            # packet = bytearray_to_packet(byte_array=byte_array)
+            # # print(f" received packet : {packet}")
+            # # test_crc(packet)
+            # operate(ser, packet)
 
 
 

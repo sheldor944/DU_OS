@@ -558,6 +558,21 @@ static void write(struct Packet* packet, uint32_t chunk_index) {
   }
 }
 
+static void make_server_os_console() {
+  volatile uint8_t data[PACKET_DATA_MAX_LENGTH];
+  for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
+    data[i] = 0;
+  }
+  volatile uint8_t crc[4];
+  struct Packet packet = {
+    .command = 4,
+    .length = 0,
+    .data = data,
+    .crc = crc
+  };
+  send_packet(&packet);
+}
+
 static void test_init() {
   write_init();
   uint8_t crc_passed = 0;
@@ -729,7 +744,9 @@ void kmain(void)
   // test_crc();
   // test_flash();
   // test_flash_write_4_bytes();
-  // test_init();
+  test_init();
+  ms_delay(500);
+  make_server_os_console();
   // init();
   // coms_testing();
   // coms_testing();

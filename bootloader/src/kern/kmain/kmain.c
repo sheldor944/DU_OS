@@ -16,6 +16,7 @@
 // headers for implementing packet protocol
 #include <UsartRingBuffer.h>
 #include <system_config.h>
+#include <sys_bus_matrix.h>
 // #include <kstring.h>
 
 #ifndef DEBUG
@@ -51,6 +52,7 @@
 #define BYTE_SIZE
 
 static volatile uint32_t total_number_of_packets;
+static uint32_t bits32_from_4_bytes(uint8_t *bytes); 
 
 struct Packet {
   uint8_t command;
@@ -58,6 +60,23 @@ struct Packet {
   uint8_t* data;
   uint8_t* crc;
 };
+
+void CRC_Init(void) {
+  RCC->AHB1ENR |= RCC_AHB1ENR_CRCEN;
+  CRC->CR |= 1;
+}
+
+uint32_t CRC_Calculate(uint32_t *data, uint32_t length) {
+  if(!(RCC->AHB1ENR & RCC_AHB1ENR_CRCEN)) {
+    CRC_Init();
+  }
+
+  for(uint32_t i = 0; i < length; i++) {
+    CRC->DR = data[i];
+  }
+
+  return CRC->DR;
+}
 
 void flash_lock(void);
 
@@ -217,13 +236,57 @@ static void test_flash(void) {
   kprintf("Data written and verified successfully!\n");
 }
 
+static uint32_t populate_CRC(struct Packet* packet)
+{
+  CRC_Init();
+  uint32_t length = ( CMD_FIELD_LENGTH + LENGTH_FIELD_LENGTH + PACKET_DATA_MAX_LENGTH)  ; 
+  if(length % 4 == 0){
+    length = length / 4 ;
+  }
+  else{
+    length = length/4 ;
+    length++;
+  }
+  uint32_t data[PACKET_MAX_LENGTH];
+
+  uint8_t bytes[4] = {
+    0,
+    0,
+    packet->command,
+    packet->length
+  };
+  
+  data[0] = bits32_from_4_bytes(bytes);
+  
+  for(uint32_t i = 0, j = 1 ; i < PACKET_DATA_MAX_LENGTH ; i+=4, j++){
+    bytes[0] = packet->data[i];
+    bytes[1] = packet->data[i + 1];
+    bytes[2] = packet->data[i + 2];
+    bytes[3] = packet->data[i + 3];
+
+    data[j] = bits32_from_4_bytes(bytes);
+  }
+
+  uint32_t crc_value = CRC_Calculate(data, length);
+  uint32_t saved_crc_value = crc_value;
+  uint32_t mask = (1<<8)-1 ; 
+  for(int i = 3 ; i >=0 ; i--){
+    packet->crc[i] = (uint8_t) (crc_value & mask); 
+    crc_value >>= 8;
+  }
+
+  return packet->crc[2];
+}
+
+
 static void send_packet(struct Packet* packet) {
+  populate_CRC(packet);
+
   Uart_write(packet->command, __CONSOLE);
   Uart_write(packet->length, __CONSOLE);
   for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
     Uart_write(packet->data[i], __CONSOLE);
   }
-  // Uart_write(packet->crc, __CONSOLE);
   for(int i = 0; i < 4; i++) {
     Uart_write(packet->crc[i], __CONSOLE);
   }
@@ -233,8 +296,8 @@ static void debug(const uint8_t* statement) {
   uint8_t length = __strlen(statement);
   uint8_t command = 0;
 
-  uint8_t crc[4];
-  for(uint8_t i = 0; i < 4; i++) crc[i] = 0;
+  uint8_t crc_array[10];
+  
 
   uint8_t data[PACKET_DATA_MAX_LENGTH];
   for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
@@ -249,7 +312,7 @@ static void debug(const uint8_t* statement) {
     .command = command,
     .length = length,
     .data = data,
-    .crc = crc
+    .crc = crc_array
   };
 
   send_packet(&packet);
@@ -558,11 +621,48 @@ static void jump_to_os(void){
   jump_to_os_reset();
 }
 
+static void static_data_test_crc(void) {
+  uint32_t data[PACKET_MAX_LENGTH];
+}
+
+static void test_crc(void) {
+  // uint32_t data[] = {
+  //   1,
+  //   2,
+  //   3,
+  //   4
+  // };
+  // uint32_t length = 4;
+
+  // uint32_t crc = CRC_Calculate(data, length);
+  // debug(convertu32(crc, 10));
+
+  uint8_t data[PACKET_DATA_MAX_LENGTH];
+  for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
+    if(i == 0) data[i] = 'a';
+    else data[i] = 0;
+  }
+
+  uint8_t crc_array[10];
+
+  struct Packet command_packet = {
+      .command = 0,
+      .length = 1,
+      .data = data,
+      .crc = crc_array
+    };
+    send_packet(&command_packet);
+    // debug(convertu32(command_packet.crc[0], 10));
+    debug("a"); 
+    debug("a");
+    debug("a");
+}
 
 void kmain(void)
 {
   __sys_init();
   
+  test_crc();
   // test_flash();
   // test_flash_write_4_bytes();
   // test_init();
@@ -581,7 +681,7 @@ void kmain(void)
   // ms_delay(100);
   // debug("jump to os");
   
-  jump_to_os();
+  // jump_to_os();
   while(1) {
 
   }

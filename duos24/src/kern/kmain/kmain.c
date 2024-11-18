@@ -32,7 +32,7 @@ void kmain(void)
 {
     vector_setup();
     __sys_init();
-    kprintf("Hello from OS\n");
+    kprintf("Hello from OS, newer version\n");
     
     while (1)
     {

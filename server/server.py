@@ -28,6 +28,7 @@ class State(Enum):
 
 class Packet:
     def __init__(self, command: int, length: int, data: List[bytes], crc: int):
+        print("type of crc during packet init: ", type(crc))
         self.command = command
         self.length = length
         self.data = data
@@ -87,10 +88,19 @@ def bytearray_to_packet(byte_array: bytearray):
     length = byte_array[1]   # Second byte is the length
     data_integers = byte_array[2:2+PACKET_DATA_MAX_LENGTH]  # Data starts at index 2 and has a length of 'length'
     data = [bytes([b]) for b in data_integers]
-    crc = byte_array[2+PACKET_DATA_MAX_LENGTH:]  # CRC is the last 4 bytes after the data
+    crc_byte_array = byte_array[2+PACKET_DATA_MAX_LENGTH:]  # CRC is the last 4 bytes after the data
+    print(type(crc_byte_array))
+
+    # crc_value = int.from_bytes(b''.join(crc_byte_array), byteorder='big')
+    crc_value = int.from_bytes(crc_byte_array, byteorder='big')
+
+
+    # UPDATED recently. Change it if it does not work
+    print("bytearray_to_packet function: ", crc_value)
+
     
     # Initialize the Packet object
-    packet = Packet(command=command, length=length, data=data, crc=crc)
+    packet = Packet(command=command, length=length, data=data, crc=crc_value)
     
     return packet
 
@@ -179,7 +189,7 @@ def receive_packet_bytes(ser: serial.Serial):
     print("Serial size: ", ser.in_waiting)
     byte = ser.read(PACKET_MAX_LENGTH)
     byte_array.extend(byte)
-    print("byte_array size: ", len(byte_array))
+    print("\n\n\nreceived byte_array:\n", byte_array, "\n\n\n")
     return byte_array
 
 def operate(ser: serial.Serial, packet: Packet):
@@ -201,6 +211,61 @@ def test_write(ser: serial.Serial):
     # ser.flush()      # Wait until all data is sent
     # time.sleep(1)
 
+def crc32_stm32_32bit(data: list[int]) -> int:
+    """
+    Calculate CRC-32 using the same polynomial as the STM32F446RE (Ethernet CRC-32).
+    Polynomial: 0x04C11DB7
+    Initial value: 0xFFFFFFFF
+    XOR out: 0xFFFFFFFF
+
+    Parameters:
+    data (list[int]): List of 32-bit integers to calculate the CRC on.
+
+    Returns:
+    int: Calculated CRC-32 checksum.
+    """
+    # Initialize CRC parameters
+    crc = 0xFFFFFFFF
+    polynomial = 0x04C11DB7
+
+    for word in data:
+        crc ^= word  # XOR with the 32-bit word directly
+
+        # Process each bit in the 32-bit word
+        for _ in range(32):
+            if crc & 0x80000000:
+                crc = (crc << 1) ^ polynomial
+            else:
+                crc <<= 1
+
+            # Keep CRC within 32 bits
+            crc &= 0xFFFFFFFF
+
+    return crc
+
+
+def test_crc(packet: Packet):
+    packet_list = [(packet.command << 8) + packet.length]
+    for i in range(0, len(packet.data), 4):
+        byte_chunk = packet.data[i:i+4]
+        int_value = int.from_bytes(b''.join(byte_chunk), byteorder='big')
+        packet_list.append(int_value)
+
+    print(packet_list)
+    print("test_crc: Packet CRC Provided: ", packet.crc)
+    calculated_crc = crc32_stm32_32bit(packet_list)
+    print("test_crc: Calculated CRC in server: ", calculated_crc)
+    
+    return packet_list
+
+# Example usage
+data = [0x1, 2, 3, 4]  # Example 32-bit data items
+crc_value = crc32_stm32_32bit(data)
+print(f"CRC32: {crc_value:#010x}")
+print(f"CRC32: {crc_value}")
+print(f"CRC32 without xor : {crc_value^0xFFFFFFFF}")
+
+
 read_file_in_chunks(OS_FILENAME)
 print_chunks()
 # print("First file chunk: ",  file_chunks[0])
@@ -216,6 +281,8 @@ try:
         while True:
             byte_array = receive_packet_bytes(ser)
             packet = bytearray_to_packet(byte_array=byte_array)
+            print(f" received packet : {packet}")
+            test_crc(packet)
             operate(ser, packet)
 
 

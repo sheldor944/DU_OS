@@ -46,7 +46,7 @@ uint8_t command;
 uint16_t size;
 uint8_t data[64];
 //timestamp to be added
-uint8_t CRC;
+// uint8_t CRC;
 }ecu_mesg_type;
 
 void extract_odb2_cmd(ecu_mesg_type*);

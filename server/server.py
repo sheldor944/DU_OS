@@ -20,6 +20,8 @@ PACKET_MAX_LENGTH = \
 ENCODER = 'utf-8'
 OS_FILENAME = 'output.bin'
 
+last_sent = -1
+
 class State(Enum):
     COMMAND_RECEIVE = 0
     DEBUG = 1
@@ -28,7 +30,6 @@ class State(Enum):
 
 class Packet:
     def __init__(self, command: int, length: int, data: List[bytes], crc: int):
-        print("type of crc during packet init: ", type(crc))
         self.command = command
         self.length = length
         self.data = data
@@ -43,7 +44,7 @@ class Packet:
         
         data_bytes = bytearray(PACKET_DATA_MAX_LENGTH)
         for i in range(min(len(self.data), PACKET_DATA_MAX_LENGTH)):
-            data_bytes[i] = self.data[i]
+            data_bytes[i] = self.data[i][0]
         
         crc_bytes = self.crc.to_bytes(4, byteorder='big')
         
@@ -65,6 +66,8 @@ def read_file_in_chunks(filename, chunk_size=PACKET_DATA_MAX_LENGTH):
                 chunk += b'\xFF' * (chunk_size - len(chunk))
             file_chunks.append(chunk)
     print("Number of chunks: ", len(file_chunks))
+    print("Type of file_chunks: ", type(file_chunks))
+    print("Type of the items of file_chunks: ", type(file_chunks[0]))
 
 def print_chunks():
     for i, chunk in enumerate(file_chunks):
@@ -79,6 +82,16 @@ def print_chunks():
     cmd=2: SEND, the client will provide some ack
 '''
 
+def to_list_of_integers(packet: Packet):
+    packet_list = [(packet.command << 8) + packet.length]
+    # print(f"to list of integers : packet.data : {type(packet.data)} " )
+    for i in range(0, len(packet.data), 4):
+        byte_chunk = packet.data[i:i+4]
+        # print(f"type of byte chunk {type(byte_chunk)}")
+        int_value = int.from_bytes(b''.join(byte_chunk), byteorder='big')
+        packet_list.append(int_value)
+    return packet_list
+
 def bytearray_to_packet(byte_array: bytearray):
     if len(byte_array) != PACKET_MAX_LENGTH:
         raise ValueError(f"Invalid packet size, expected {PACKET_MAX_LENGTH} bytes, got {len(byte_array)} bytes")
@@ -89,15 +102,15 @@ def bytearray_to_packet(byte_array: bytearray):
     data_integers = byte_array[2:2+PACKET_DATA_MAX_LENGTH]  # Data starts at index 2 and has a length of 'length'
     data = [bytes([b]) for b in data_integers]
     crc_byte_array = byte_array[2+PACKET_DATA_MAX_LENGTH:]  # CRC is the last 4 bytes after the data
-    print(type(crc_byte_array))
+    # print(type(crc_byte_array))
 
     # crc_value = int.from_bytes(b''.join(crc_byte_array), byteorder='big')
     crc_value = int.from_bytes(crc_byte_array, byteorder='big')
 
 
     # UPDATED recently. Change it if it does not work
-    print("bytearray_to_packet function: ", crc_value)
-
+    # print("bytearray_to_packet function: ", crc_value)
+    # print("\n\nreceived byte array: ", byte_array, "\n\n")
     
     # Initialize the Packet object
     packet = Packet(command=command, length=length, data=data, crc=crc_value)
@@ -133,7 +146,7 @@ def handle_debug(packet: Packet):
     print("\n\n----\nDEBUGGING START:\n")
     length = packet.length
 
-    print("Debug packet:\n", packet.to_bytes, "\n\n")
+    # print("Debug packet:\n", packet.to_bytes, "\n\n")
 
     byte_array = bytearray()
     for i in range(PACKET_DATA_MAX_LENGTH):
@@ -155,28 +168,41 @@ def handle_initialization(ser: serial.Serial, packet: Packet):
     total_number_of_packets = math.ceil(size / PACKET_DATA_MAX_LENGTH)
     print("Total number of packets: ", total_number_of_packets)
     
-    bytes_32_bit = total_number_of_packets.to_bytes(4, byteorder='big')
-    bytes_96_bit = bytes(12)
-    combined_bytes = bytes_32_bit + bytes_96_bit
+    bytes_4 = total_number_of_packets.to_bytes(4, byteorder='big')
+    bytes_124 = bytes(124)
+    combined_bytes = bytes_4 + bytes_124
+    data_list = [bytes([b]) for b in combined_bytes]
 
-    crc = calculate_crc(packet)
-    packet = Packet(command=1, length=32, data=combined_bytes, crc=crc)
+
+    sendPacket = Packet(command=1, length=32, data=data_list, crc=12)
+    # crc = 0
+    packet_data_integer_list = to_list_of_integers(sendPacket)
+    # print("handle_init: packet_data_integer_list size: ", len(packet_data_integer_list))
+    crc = crc32_stm32_32bit(packet_data_integer_list)
+    sendPacket.crc = crc
+    print("CRC from server init: ", crc)
     
-    packet_bytes = packet.to_bytes()
+    packet_bytes = sendPacket.to_bytes()
+    # print("\n\nsending packet bytes...: ", packet_bytes, "\n\n")
     ser.write(packet_bytes)
 
 def handle_send(ser: serial.Serial, packet: Packet):
     chunk_index = int.from_bytes(b''.join(packet.data)[:4], byteorder="big")
     print("chunk index: ", chunk_index)
+    global last_sent
+    last_sent = chunk_index
+    data_list = [bytes([b]) for b in file_chunks[chunk_index]]
     packet = Packet(
         command=2,
         length=PACKET_DATA_MAX_LENGTH,
-        data=file_chunks[chunk_index],
+        data=data_list,
         crc=0
     )
+    crc_value = crc32_stm32_32bit(to_list_of_integers(packet))
+    packet.crc = crc_value
     packet_bytes = packet.to_bytes()
     
-    print("The packet being sent is: ", packet)
+    # print("The packet being sent is: ", packet)
     print("Bytes are: ", packet_bytes)
     ser.write(packet_bytes)
 
@@ -186,10 +212,10 @@ def receive_packet_bytes(ser: serial.Serial):
     
     while ser.in_waiting < PACKET_MAX_LENGTH:
         continue
-    print("Serial size: ", ser.in_waiting)
+    # print("Serial size: ", ser.in_waiting)
     byte = ser.read(PACKET_MAX_LENGTH)
     byte_array.extend(byte)
-    print("\n\n\nreceived byte_array:\n", byte_array, "\n\n\n")
+    # print("\n\n\nreceived byte_array:\n", byte_array, "\n\n\n")
     return byte_array
 
 def operate(ser: serial.Serial, packet: Packet):
@@ -243,11 +269,13 @@ def crc32_stm32_32bit(data: list[int]) -> int:
 
     return crc
 
-
 def test_crc(packet: Packet):
     packet_list = [(packet.command << 8) + packet.length]
+    # print(f"in test crc : type of packet.data {type(packet.data)}")
     for i in range(0, len(packet.data), 4):
         byte_chunk = packet.data[i:i+4]
+        # print(f"in test crc : type of byte chunk {type(byte_chunk)}")
+
         int_value = int.from_bytes(b''.join(byte_chunk), byteorder='big')
         packet_list.append(int_value)
 
@@ -257,6 +285,11 @@ def test_crc(packet: Packet):
     print("test_crc: Calculated CRC in server: ", calculated_crc)
     
     return packet_list
+
+def os_print(ser: serial.Serial):
+    if ser.in_waiting() > 1:
+        data = ser.read(ser.in_waiting())
+        print(data.decode(ENCODER))
 
 # Example usage
 data = [0x1, 2, 3, 4]  # Example 32-bit data items
@@ -279,10 +312,19 @@ try:
         print(f"Listening for data on {SERIAL_PORT} at {BAUD_RATE} baud.")
         # test_write(ser)
         while True:
+            # if last_sent >= len(file_chunks) - 1:
+            #     os_print(ser)
+            # else:
+            #     byte_array = receive_packet_bytes(ser)
+            #     packet = bytearray_to_packet(byte_array=byte_array)
+            #     # print(f" received packet : {packet}")
+            #     # test_crc(packet)
+            #     operate(ser, packet)
+            
             byte_array = receive_packet_bytes(ser)
             packet = bytearray_to_packet(byte_array=byte_array)
-            print(f" received packet : {packet}")
-            test_crc(packet)
+            # print(f" received packet : {packet}")
+            # test_crc(packet)
             operate(ser, packet)
 
 

@@ -236,6 +236,42 @@ static void test_flash(void) {
   kprintf("Data written and verified successfully!\n");
 }
 
+static uint32_t calculate_packet_CRC(struct Packet* packet)
+{
+  CRC_Init();
+  uint32_t length = ( CMD_FIELD_LENGTH + LENGTH_FIELD_LENGTH + PACKET_DATA_MAX_LENGTH)  ; 
+  if(length % 4 == 0){
+    length = length / 4 ;
+  }
+  else{
+    length = length/4 ;
+    length++;
+  }
+  uint32_t data[PACKET_MAX_LENGTH];
+
+  uint8_t bytes[4] = {
+    0,
+    0,
+    packet->command,
+    packet->length
+  };
+  
+  data[0] = bits32_from_4_bytes(bytes);
+  
+  for(uint32_t i = 0, j = 1 ; i < PACKET_DATA_MAX_LENGTH ; i+=4, j++){
+    bytes[0] = packet->data[i];
+    bytes[1] = packet->data[i + 1];
+    bytes[2] = packet->data[i + 2];
+    bytes[3] = packet->data[i + 3];
+
+    data[j] = bits32_from_4_bytes(bytes);
+  }
+
+  uint32_t crc_value = CRC_Calculate(data, length);
+
+  return crc_value;
+}
+
 static uint32_t populate_CRC(struct Packet* packet)
 {
   CRC_Init();
@@ -318,6 +354,10 @@ static void debug(const uint8_t* statement) {
   send_packet(&packet);
 }
 
+static uint32_t bits32_from_4_different_bytes(uint8_t a, uint8_t b, uint8_t c, uint8_t d){
+  return (a << 24) + (b << 16) + (c << 8) + d;
+}
+
 static uint32_t bits32_from_4_bytes(uint8_t *bytes){
   uint32_t sum = 0; 
   uint32_t power = 1 << 8; 
@@ -378,6 +418,13 @@ static void receive_packet(struct Packet* packet) {
   }
   Uart_flush(__CONSOLE);
   packet_from_bytes(data, packet);
+
+  debug(convertu32(bits32_from_4_different_bytes(
+    packet->crc[0],
+    packet->crc[1],
+    packet->crc[2],
+    packet->crc[3]
+  ), 10));
 }
 
 static int8_t test_read(void) {
@@ -513,15 +560,23 @@ static void write(struct Packet* packet, uint32_t chunk_index) {
 
 static void test_init() {
   write_init();
-  init();
-
+  uint8_t crc_passed = 0;
   volatile uint8_t data[PACKET_DATA_MAX_LENGTH];
   volatile uint8_t crc[4];
   struct Packet packet = {
     .data = data,
     .crc = crc
   };
-  receive_packet(&packet);
+  while(!crc_passed) {
+    init();
+    receive_packet(&packet);
+    uint32_t provided_crc = bits32_from_4_bytes(packet.crc);
+
+    uint32_t calculated_packet_crc = calculate_packet_CRC(&packet);
+    if(calculated_packet_crc == provided_crc) {
+      crc_passed = 1;
+    }
+  }
 
   volatile uint8_t size_info_array[4] = {
     packet.data[0],
@@ -535,28 +590,35 @@ static void test_init() {
   volatile uint8_t cmd_data[PACKET_DATA_MAX_LENGTH];
   volatile uint8_t cmd_crc[4];
   for(uint32_t i = 0; i < total_number_of_packets; i++) {
-    for(uint32_t j = 0; j < PACKET_DATA_MAX_LENGTH; j++) {
-      cmd_data[j] = 0;
-    }
-    uint32_t ack = i;
-    uint32_t mask = (1 << 8) - 1;
-    for(int32_t j = 3; j >= 0; j--) {
-      cmd_data[j] = ack & mask;
-      ack >>= 8;
-      cmd_crc[j] = 0;
-    }
-    // *(uint32_t *) cmd_crc = (uint32_t) 0;
-    struct Packet command_packet = {
-      .command = 2,
-      .length = 4,
-      .data = cmd_data,
-      .crc = cmd_crc
-    };
-    send_packet(&command_packet);
+    crc_passed = 0;
+    while(!crc_passed) {
+      for(uint32_t j = 0; j < PACKET_DATA_MAX_LENGTH; j++) {
+        cmd_data[j] = 0;
+      }
+      uint32_t ack = i;
+      uint32_t mask = (1 << 8) - 1;
+      for(int32_t j = 3; j >= 0; j--) {
+        cmd_data[j] = ack & mask;
+        ack >>= 8;
+        cmd_crc[j] = 0;
+      }
+      // *(uint32_t *) cmd_crc = (uint32_t) 0;
+      struct Packet command_packet = {
+        .command = 2,
+        .length = 4,
+        .data = cmd_data,
+        .crc = cmd_crc
+      };
+      send_packet(&command_packet);
+      receive_packet(&packet);
 
+      uint32_t provided_crc = bits32_from_4_bytes(packet.crc);
 
-     
-    receive_packet(&packet);
+      uint32_t calculated_packet_crc = calculate_packet_CRC(&packet);
+      if(calculated_packet_crc == provided_crc) {
+        crc_passed = 1;
+      }
+    }
     // uint32_t first_4_byte = 0, power = (1 << 8) ; 
     // for(int j = 3 ; j >= 0 ; j--){
     //   uint32_t current_number = packet.data[j];
@@ -584,7 +646,11 @@ static void coms_testing(void) {
     .crc = crc
   };
   receive_packet(&packet);
-  debug(convertu32(packet.data[0], 10));
+  send_packet(&packet);
+  // uint32_t crc_value = calculate_packet_CRC(&packet);
+  // debug(convertu32(crc_value, 10));
+
+  // debug(convertu32(packet.crc[0], 10));
   // debug(convertu32(packet.data[0] + 40, 10));
 
   // init();
@@ -653,16 +719,14 @@ static void test_crc(void) {
     };
     send_packet(&command_packet);
     // debug(convertu32(command_packet.crc[0], 10));
-    debug("a"); 
-    debug("a");
-    debug("a");
+    // debug("a"); 
 }
 
 void kmain(void)
 {
   __sys_init();
   
-  test_crc();
+  // test_crc();
   // test_flash();
   // test_flash_write_4_bytes();
   // test_init();
@@ -678,10 +742,10 @@ void kmain(void)
   // Uart_flush(__CONSOLE);
   // debug("hi");
   // Uart_flush(__CONSOLE);
-  // ms_delay(100);
+  ms_delay(500);
   // debug("jump to os");
   
-  // jump_to_os();
+  jump_to_os();
   while(1) {
 
   }

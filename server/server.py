@@ -6,7 +6,7 @@ from typing import List
 import time
 
 VERSION_MAJOR = 3 
-VERSION_MINOR = 69 
+VERSION_MINOR = 1 
 
 
 # Replace '/dev/ttyUSB0' with the correct device for your STM32 connection
@@ -240,8 +240,8 @@ def handle_version_check(ser: serial.Serial, packet: Packet):
     # print("handle_init: packet_data_integer_list size: ", len(packet_data_integer_list))
     crc = crc32_stm32_32bit(packet_data_integer_list)
     sendPacket.crc = crc
-   
     
+   
     packet_bytes = sendPacket.to_bytes()
     # print("\n\nsending packet bytes...: ", packet_bytes, "\n\n")
     ser.write(packet_bytes)

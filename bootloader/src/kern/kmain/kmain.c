@@ -762,6 +762,9 @@ static uint32_t get_OS_version_minor(){
   return version_minor; 
 }
 
+
+
+
 static void check_for_update(void){
   uint8_t data[PACKET_DATA_MAX_LENGTH];
   for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
@@ -800,9 +803,9 @@ static void check_for_update(void){
   uint32_t current_version_minor = get_OS_version_minor();
   if(current_version_major == version_major && current_version_minor == version_minor){
     debug("Already updated");
-    make_server_os_console();
-    ms_delay(500);
-    jump_to_os();
+
+    
+    
   }
   else{
     debug("Need update");
@@ -810,9 +813,6 @@ static void check_for_update(void){
 
     set_OS_version(version_major, version_minor);
 
-    make_server_os_console();
-    ms_delay(500);
-    jump_to_os();
 
   }
 
@@ -840,12 +840,13 @@ void kmain(void)
   // test_flash_write_4_bytes();
   // test_init();
   // ms_delay(500);
-  // make_server_os_console();
+  
   // init();
   // coms_testing();
   // coms_testing();
   // test_ring_buffer();
   test_version();
+  make_server_os_console();
   // kprintf("Hello from Bootloader\n");
   // ms_delay(5000);
   *VERSION_ADDR = 1;
@@ -858,7 +859,7 @@ void kmain(void)
 
   
   
-  // jump_to_os();
+  jump_to_os();
   while(1) {
 
   }

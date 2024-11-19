@@ -5,6 +5,10 @@ import math
 from typing import List
 import time
 
+VERSION_MAJOR = 3 
+VERSION_MINOR = 69 
+
+
 # Replace '/dev/ttyUSB0' with the correct device for your STM32 connection
 SERIAL_PORT = '/dev/ttyACM0'
 BAUD_RATE = 115200  # Set to match the UART2 configuration on STM32
@@ -219,6 +223,28 @@ def receive_packet_bytes(ser: serial.Serial):
     return byte_array
 
 def handle_version_check(ser: serial.Serial, packet: Packet):
+    
+
+    major_bytes_4 = VERSION_MAJOR.to_bytes(4, byteorder='big')
+    minor_bytes_4 = VERSION_MINOR.to_bytes(4, byteorder='big')
+    bytes_120 = bytes(120)
+    combined_bytes = major_bytes_4 + minor_bytes_4 + bytes_120
+    data_list = [bytes([b]) for b in combined_bytes]
+    sendPacket = Packet(
+        command=3,
+        length=8,
+        data=data_list,
+        crc = 0 
+    )
+    packet_data_integer_list = to_list_of_integers(sendPacket)
+    # print("handle_init: packet_data_integer_list size: ", len(packet_data_integer_list))
+    crc = crc32_stm32_32bit(packet_data_integer_list)
+    sendPacket.crc = crc
+   
+    
+    packet_bytes = sendPacket.to_bytes()
+    # print("\n\nsending packet bytes...: ", packet_bytes, "\n\n")
+    ser.write(packet_bytes)
     pass
 
 def handle_os_print(ser, packet):

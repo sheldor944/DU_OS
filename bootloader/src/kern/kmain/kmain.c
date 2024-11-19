@@ -23,25 +23,27 @@
 #define DEBUG 1
 #endif
 
-#define SECTOR_NUMBER      4
-#define TARGET_ADDRESS  0x08010000
-#define BOATLOADER_SIZE (0x10000U)
-#define OS_START_ADDRESS (0X08010000U) //duos 
-#define BOATLOADER_SIZE (0x10000U)
-#define MMIO8(address)  (*(volatile uint8_t *)(address))
-#define MMIO32(address)  (*(volatile uint32_t *)(address))
+#define SECTOR_NUMBER              4
+#define OS_VERSION_STORAGE_SECTOR  7
+#define OS_VERSION_ADDRESS         0x08060000
+#define TARGET_ADDRESS             0x08010000
+#define BOATLOADER_SIZE            (0x10000U)
+#define OS_START_ADDRESS           (0X08010000U) //duos 
+#define BOATLOADER_SIZE            (0x10000U)
+#define MMIO8(address)             (*(volatile uint8_t *)(address))
+#define MMIO32(address)            (*(volatile uint32_t *)(address))
 
-#define VERSION_ADDR        ((volatile uint32_t *) 0x2000FFFC)
-#define FLASH_BASE          ((0x40000000UL + 0x00020000UL) + 0x3C00UL) 
+#define VERSION_ADDR               ((volatile uint32_t *) 0x2000FFFC)
+#define FLASH_BASE                 ((0x40000000UL + 0x00020000UL) + 0x3C00UL) 
 // #define FLASH_BASE          (0x08000000)
-#define FLASH_SR            ((volatile uint32_t *)(FLASH_BASE + 0x0CUL))
-#define FLASH_KEYR			    ((volatile uint32_t *)( FLASH_BASE + 0x04UL))
-#define FLASH_KEYR_KEY1     0x45670123
-#define FLASH_KEYR_KEY2     0xCDEF89AB
-#define FLASH_CR            ((volatile uint32_t *)(FLASH_BASE + 0x10))
-#define FLASH_CR_SNB_MASK		0x1f
-#define FLASH_CR_PROGRAM_SHIFT		8
-#define FLASH_CR_SNB_SHIFT		3
+#define FLASH_SR                   ((volatile uint32_t *)(FLASH_BASE + 0x0CUL))
+#define FLASH_KEYR			           ((volatile uint32_t *)( FLASH_BASE + 0x04UL))
+#define FLASH_KEYR_KEY1            0x45670123
+#define FLASH_KEYR_KEY2            0xCDEF89AB
+#define FLASH_CR                   ((volatile uint32_t *)(FLASH_BASE + 0x10))
+#define FLASH_CR_SNB_MASK		       0x1f
+#define FLASH_CR_PROGRAM_SHIFT	   8
+#define FLASH_CR_SNB_SHIFT		     3
 
 // needed for packet protocl
 #define PACKET_DATA_MAX_LENGTH 128UL
@@ -354,7 +356,7 @@ static void debug(const uint8_t* statement) {
   send_packet(&packet);
 }
 
-static uint32_t bits32_from_4_different_bytes(uint8_t a, uint8_t b, uint8_t c, uint8_t d){
+static uint32_t bits32_from_4_different_bytes(uint32_t a, uint32_t b, uint32_t c, uint32_t d){
   return (a << 24) + (b << 16) + (c << 8) + d;
 }
 
@@ -411,7 +413,7 @@ static void packet_from_bytes(uint8_t* data_bytes, struct Packet* packet) {
 }
 
 // WARNING: packet object needs to have statically allocated crc and data fields
-static void receive_packet(struct Packet* packet) {
+static void   receive_packet(struct Packet* packet) {
   uint8_t data[PACKET_MAX_LENGTH];
   for(uint8_t i = 0; i < PACKET_MAX_LENGTH; i++) {
     data[i] = UART_READ(__CONSOLE);
@@ -419,12 +421,12 @@ static void receive_packet(struct Packet* packet) {
   Uart_flush(__CONSOLE);
   packet_from_bytes(data, packet);
 
-  debug(convertu32(bits32_from_4_different_bytes(
-    packet->crc[0],
-    packet->crc[1],
-    packet->crc[2],
-    packet->crc[3]
-  ), 10));
+  // debug(convertu32(bits32_from_4_different_bytes(
+  //   packet->crc[0],
+  //   packet->crc[1],
+  //   packet->crc[2],
+  //   packet->crc[3]
+  // ), 10));
 }
 
 static int8_t test_read(void) {
@@ -526,6 +528,7 @@ static void test_flash_write_4_bytes(void) {
 }
 
 static void write_init(void) {
+  
   flash_lock();                                                            
   flash_unlock();
   flash_erase_sector(SECTOR_NUMBER, 0x02);
@@ -737,6 +740,97 @@ static void test_crc(void) {
     // debug("a"); 
 }
 
+static void set_OS_version(uint32_t version_major, uint32_t version_minor){
+
+  flash_lock();                                                            
+  flash_unlock();
+  flash_erase_sector(OS_VERSION_STORAGE_SECTOR, 0x02);
+
+  flash_program_4_bytes(OS_VERSION_ADDRESS, version_major);
+  flash_program_4_bytes(OS_VERSION_ADDRESS + 4, version_minor);
+  flash_lock();
+  
+
+}
+
+static uint32_t get_OS_version_major(){
+  uint32_t version_major = *(volatile uint32_t*) OS_VERSION_ADDRESS;
+  return version_major; 
+}
+static uint32_t get_OS_version_minor(){
+  uint32_t version_minor = *(volatile uint32_t*) (OS_VERSION_ADDRESS + 4);
+  return version_minor; 
+}
+
+static void check_for_update(void){
+  uint8_t data[PACKET_DATA_MAX_LENGTH];
+  for(uint8_t i = 0; i < PACKET_DATA_MAX_LENGTH; i++) {
+    data[i] = 0;
+  }
+
+  uint8_t crc_array[10];
+  struct Packet command_packet = {
+      .command = 3,
+      .length = 0,
+      .data = data,
+      .crc = crc_array
+    };
+  struct Packet received_packet = {
+    .command = 0,
+    .length = 0,
+    .data = data,
+    .crc = crc_array
+   };
+  send_packet(&command_packet);
+  receive_packet(&received_packet);
+  uint32_t version_major = bits32_from_4_different_bytes(
+    received_packet.data[0],
+    received_packet.data[1],
+    received_packet.data[2],
+    received_packet.data[3]
+  );
+
+  uint32_t version_minor = bits32_from_4_different_bytes(
+    received_packet.data[4],
+    received_packet.data[5],
+    received_packet.data[6],
+    received_packet.data[7]
+  );
+  uint32_t current_version_major = get_OS_version_major();
+  uint32_t current_version_minor = get_OS_version_minor();
+  if(current_version_major == version_major && current_version_minor == version_minor){
+    debug("Already updated");
+    make_server_os_console();
+    ms_delay(500);
+    jump_to_os();
+  }
+  else{
+    debug("Need update");
+    test_init();
+
+    set_OS_version(version_major, version_minor);
+
+    make_server_os_console();
+    ms_delay(500);
+    jump_to_os();
+
+  }
+
+}
+
+static void test_version(void){
+  // set_OS_version(3,56);
+  // uint32_t version_major = get_OS_version_major(); 
+  // uint32_t version_minor = get_OS_version_minor() ; 
+  
+  // debug(convertu32(version_major, 10));
+  // debug(convertu32(version_minor, 10));
+  
+
+  // debug(convertu32(current_version, 10));
+  check_for_update();
+}
+
 void kmain(void)
 {
   __sys_init();
@@ -744,14 +838,14 @@ void kmain(void)
   // test_crc();
   // test_flash();
   // test_flash_write_4_bytes();
-  test_init();
-  ms_delay(500);
-  make_server_os_console();
+  // test_init();
+  // ms_delay(500);
+  // make_server_os_console();
   // init();
   // coms_testing();
   // coms_testing();
   // test_ring_buffer();
-
+  test_version();
   // kprintf("Hello from Bootloader\n");
   // ms_delay(5000);
   *VERSION_ADDR = 1;
@@ -761,8 +855,10 @@ void kmain(void)
   // Uart_flush(__CONSOLE);
   ms_delay(500);
   // debug("jump to os");
+
   
-  jump_to_os();
+  
+  // jump_to_os();
   while(1) {
 
   }

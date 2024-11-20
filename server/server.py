@@ -4,9 +4,33 @@ import os
 import math
 from typing import List
 import time
+import json
 
-VERSION_MAJOR = 3 
-VERSION_MINOR = 1 
+VERSION_FILE = "version.txt"
+VERSION_MAP_FILE = "version_names.json"
+OUTPUT_BIN_FILE = "output.bin"
+
+def read_version():
+    """Read VERSION_MAJOR and VERSION_MINOR from a file."""
+    version = {}
+    with open(VERSION_FILE, "r") as file:
+        for line in file:
+            key, value = line.strip().split("=")
+            version[key] = int(value)
+    return version["VERSION_MAJOR"], version["VERSION_MINOR"]
+
+
+VERSION_MAJOR, VERSION_MINOR = read_version()
+
+
+def get_version_name(major, minor):
+    """Get the name for the given version from the JSON file."""
+    with open(VERSION_MAP_FILE, "r") as file:
+        version_map = json.load(file)
+    version_key = f"{major}.{minor}"
+    return version_map.get(version_key, "unknown_version")
+
+version_name = get_version_name(VERSION_MAJOR, VERSION_MINOR)
 
 
 # Replace '/dev/ttyUSB0' with the correct device for your STM32 connection
@@ -22,7 +46,10 @@ PACKET_MAX_LENGTH = \
     PACKET_DATA_MAX_LENGTH + \
     CRC_FIELD_LENGTH
 ENCODER = 'utf-8'
-OS_FILENAME = 'output.bin'
+OS_FILENAME = f'os_files/{version_name}.bin'
+
+# COMMAND FIELDS
+COMMAND_RETRANSMIT = 5
 
 class State(Enum):
     COMMAND_RECEIVE = 0
@@ -192,7 +219,7 @@ def handle_initialization(ser: serial.Serial, packet: Packet):
 
 def handle_send(ser: serial.Serial, packet: Packet):
     chunk_index = int.from_bytes(b''.join(packet.data)[:4], byteorder="big")
-    print("chunk index: ", chunk_index)
+    print("Ack: ", chunk_index)
     global last_sent
     last_sent = chunk_index
     data_list = [bytes([b]) for b in file_chunks[chunk_index]]
@@ -207,7 +234,7 @@ def handle_send(ser: serial.Serial, packet: Packet):
     packet_bytes = packet.to_bytes()
     
     # print("The packet being sent is: ", packet)
-    print("Bytes are: ", packet_bytes)
+    # print("Bytes are: ", packet_bytes)
     ser.write(packet_bytes)
 
 def receive_packet_bytes(ser: serial.Serial):
@@ -247,9 +274,20 @@ def handle_version_check(ser: serial.Serial, packet: Packet):
     ser.write(packet_bytes)
     pass
 
+# send a packet that requests retransmission
+def handle_crc_error(ser: serial.Serial):
+    data_bytes = bytes(PACKET_DATA_MAX_LENGTH)
+    data_list = [bytes([b]) for b in data_bytes]
+    packet = Packet(command=COMMAND_RETRANSMIT, length=0, data=data_list, crc=0)
+    packet.crc = crc32_stm32_32bit(to_list_of_integers(packet))
+
+    packet_bytes = packet.to_bytes()
+    ser.write(packet_bytes)
+
 def handle_os_print(ser, packet):
     global current_state
     current_state = State.OS_CONSOLE
+    print("Server is now the OS console.")
 
 def operate(ser: serial.Serial, packet: Packet):
     cmd = packet.command
@@ -306,6 +344,18 @@ def crc32_stm32_32bit(data: list[int]) -> int:
 
     return crc
 
+def validate_crc(packet: Packet):
+    calculated_server_crc = crc32_stm32_32bit(to_list_of_integers(packet))
+
+    print("Server side CRC: ", calculated_server_crc)
+    print("CRC from packet: ", packet.crc)
+
+    if calculated_server_crc == packet.crc:
+        print("CRC validated")
+        return True
+    
+    return False
+
 def test_crc(packet: Packet):
     packet_list = [(packet.command << 8) + packet.length]
     # print(f"in test crc : type of packet.data {type(packet.data)}")
@@ -355,9 +405,16 @@ try:
             else:
                 byte_array = receive_packet_bytes(ser)
                 packet = bytearray_to_packet(byte_array=byte_array)
+
+                if validate_crc(packet=packet) == False:
+                    handle_crc_error(ser)
+
                 # print(f" received packet : {packet}")
                 # test_crc(packet)
-                operate(ser, packet)
+                else:
+                    operate(ser, packet)
+
+                print("\n")
             
             # byte_array = receive_packet_bytes(ser)
             # packet = bytearray_to_packet(byte_array=byte_array)

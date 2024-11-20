@@ -53,6 +53,9 @@
 #define PACKET_MAX_LENGTH (CMD_FIELD_LENGTH + LENGTH_FIELD_LENGTH + PACKET_DATA_MAX_LENGTH + CRC_FIELD_LENGTH)
 #define BYTE_SIZE
 
+// COMMAND TYPES
+#define COMMAND_RETRANSMIT 5
+
 static volatile uint32_t total_number_of_packets;
 static uint32_t bits32_from_4_bytes(uint8_t *bytes); 
 
@@ -413,14 +416,21 @@ static void packet_from_bytes(uint8_t* data_bytes, struct Packet* packet) {
 }
 
 // WARNING: packet object needs to have statically allocated crc and data fields
-static void   receive_packet(struct Packet* packet) {
+// returns 0 if there is any error while receiving the packet
+// returns 1 if successful
+static uint32_t receive_packet(struct Packet* packet) {
   uint8_t data[PACKET_MAX_LENGTH];
   for(uint8_t i = 0; i < PACKET_MAX_LENGTH; i++) {
-    data[i] = UART_READ(__CONSOLE);
+    uint32_t read_status = UART_READ(__CONSOLE);
+    if(read_status == 1000) {
+      return 0;
+    }
+    data[i] = (uint8_t) read_status;
   }
   Uart_flush(__CONSOLE);
   packet_from_bytes(data, packet);
 
+  return 1;
   // debug(convertu32(bits32_from_4_different_bytes(
   //   packet->crc[0],
   //   packet->crc[1],
@@ -588,6 +598,12 @@ static void test_init() {
   while(!crc_passed) {
     init();
     receive_packet(&packet);
+
+    // check if the packet is a retransmit request
+    if(packet.command == COMMAND_RETRANSMIT) {
+      continue;
+    }
+
     uint32_t provided_crc = bits32_from_4_bytes(packet.crc);
 
     uint32_t calculated_packet_crc = calculate_packet_CRC(&packet);
@@ -629,6 +645,10 @@ static void test_init() {
       };
       send_packet(&command_packet);
       receive_packet(&packet);
+
+      if(packet.command == COMMAND_RETRANSMIT) {
+        continue;
+      }
 
       uint32_t provided_crc = bits32_from_4_bytes(packet.crc);
 
@@ -773,11 +793,11 @@ static void check_for_update(void){
 
   uint8_t crc_array[10];
   struct Packet command_packet = {
-      .command = 3,
-      .length = 0,
-      .data = data,
-      .crc = crc_array
-    };
+    .command = 3,
+    .length = 0,
+    .data = data,
+    .crc = crc_array
+  };
   struct Packet received_packet = {
     .command = 0,
     .length = 0,
@@ -785,7 +805,12 @@ static void check_for_update(void){
     .crc = crc_array
    };
   send_packet(&command_packet);
-  receive_packet(&received_packet);
+  uint32_t receive_status = receive_packet(&received_packet);
+
+  if(!receive_status) {
+    return;
+  }
+
   uint32_t version_major = bits32_from_4_different_bytes(
     received_packet.data[0],
     received_packet.data[1],
@@ -803,17 +828,12 @@ static void check_for_update(void){
   uint32_t current_version_minor = get_OS_version_minor();
   if(current_version_major == version_major && current_version_minor == version_minor){
     debug("Already updated");
-
-    
-    
   }
   else{
     debug("Need update");
     test_init();
 
     set_OS_version(version_major, version_minor);
-
-
   }
 
 }

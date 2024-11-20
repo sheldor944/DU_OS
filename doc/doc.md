@@ -476,3 +476,5 @@ This detailed documentation provides a comprehensive understanding of the system
 - **Data Writing Protocol**:  We faced issues while trying to write individual bytes to the flash memory. To address this problem, data writing is performed in 32-bit segments, and the memory address is incremented by 4 bytes after each write to ensure data integrity and alignment. The issue is probably due to 32-bit alignment requirement in the MCU.
   
 - **CRC Calculation**: Prior to performing CRC calculations, the CRC register must be reset. This step is crucial to maintain the accuracy of the CRC values computed during data transmission.
+
+- **Serial Read**: Initially, we encountered issues while reading bytes one at a time using `ser.read(<number of bytes>)`. To address this, we adjusted our approach by waiting for `ser.in_waiting` to match the expected number of bytes before reading the exact amount. Further investigation is needed to identify the root cause of the issue.

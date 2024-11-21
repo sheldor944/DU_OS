@@ -187,7 +187,7 @@ bl-flash.o: $(OS_PATH)/lib/kern/bl-flash.c
 
 bootloader.o: $(OS_PATH)/arch/$(MCU)/boot/bootloader.S
 	$(CC) -x assembler-with-cpp $(CFLAGS) $(INCLUDE) $^ -o $(OBJECT)/$@
-	python pad-bootloader.py
+	python3 pad-bootloader.py
 
 
 #OBJS+= $(OS_PATH)/arch/$(MCU)/boot/bootloader.S

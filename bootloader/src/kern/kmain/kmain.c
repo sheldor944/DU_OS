@@ -826,6 +826,7 @@ static void check_for_update(void){
   );
   uint32_t current_version_major = get_OS_version_major();
   uint32_t current_version_minor = get_OS_version_minor();
+  // If latest needed then just add the greathen than sign
   if(current_version_major == version_major && current_version_minor == version_minor){
     debug("Already updated");
   }

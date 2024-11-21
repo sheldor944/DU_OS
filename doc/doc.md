@@ -13,17 +13,21 @@ The project is a system for managing firmware updates and interactions between a
 ### 1. How to Use the System
 
 #### Server Setup
-- Ensure Python3 is installed on your system.
+- Ensure `python3` and `pyserial` is installed on your system.
 - Connect the microcontroller to your computer using the appropriate serial connection, such as a USB to UART converter. We are using UART2, which is connected to the USB through the ST-LINK debugger.
+
+- Go to the directory `server`.
+
 - Before running the server, set the current OS version in the server from the `version.txt` file. If an updated version of the OS is available, place the binary file of the updated OS in the `os_files` directory. Additionally, update the `version_names.json` file so that it can locate the corresponding file name from the version major and version minor.
-- Run the Python script (`server.py`) using the command `python3 server.py`. The script will automatically handle incoming packets from the microcontroller and respond based on the command type and data contained within these packets.
+
+  The currently available versions are `1.0`, `1.1`, `2.0`, and `2.1`. Please select one of them in the `version.txt` file.
+
+- Run the Python script (`server.py`) using the command `python3 server.py`. The script will automatically handle incoming packets from the microcontroller and respond based on the command type and data contained within these packets. Please ensure that the python server program is ran before the microcontroller is reset. The server program should be rerun after every successful run, because it switches to the `OS Console` state after a successful jump to the OS.
 
 #### Client (Microcontroller) Setup
 - The bootloader code should be compiled and flashed onto an STM32 microcontroller.
 - The microcontroller should be configured to match the communication parameters specified in the Python script (e.g., baud rate, serial port).
 - The microcontroller will initiate communications based on its firmware logic, responding to commands from the server or sending requests to the server.
-
-
 
 ### 2. Packet Protocol Details
 
